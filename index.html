@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Soundshow 0.9.6</title>
+<title>Soundshow 0.9.7</title>
 <style>
 *{box-sizing:border-box}html,body{margin:0;min-height:100%;background:#0b0b0b;color:#f5f5f5;font-family:system-ui,-apple-system,Segoe UI,sans-serif}
 body{min-height:100vh;display:grid;place-items:center}.hidden{display:none!important}
@@ -35,7 +35,7 @@ button:hover,.choose:hover{background:#292929}.loader,.ready{text-align:center;w
 </style>
 </head>
 <body>
-<div class="version">Soundshow 0.9.6</div><main>
+<div class="version">Soundshow 0.9.7</div><main>
 <section id="loader" class="loader">
 <h1>Soundshow</h1><p>Loading presentation…</p>
 <p id="status" class="status"></p>
@@ -53,7 +53,7 @@ button:hover,.choose:hover{background:#292929}.loader,.ready{text-align:center;w
 <script src="https://w.soundcloud.com/player/api.js"></script>
 <script>
 "use strict";
-let config=null,index=0,widget=null,widgetReady=false,playing=false,wantsPlayback=false,pendingUrl=null,timelineTimer=null,timelineStep=-1,currentSlide=null,audioActivated=false;
+let config=null,index=0,widget=null,widgetReady=false,playing=false,wantsPlayback=false,pendingUrl=null,timelineTimer=null,timelineStep=-1,currentSlide=null,audioActivated=false,firstPlayRetry=0;
 const $=id=>document.getElementById(id), loader=$("loader"),ready=$("ready"),show=$("show"),status=$("status"),player=$("scPlayer"),img=$("slideImage"),imgB=$("slideImageB"),playBtn=$("playBtn"),audioStatus=$("audioStatus");
 const PRESENTATION_FILE="soundshow.json";
 let activeImg=img;
@@ -96,12 +96,24 @@ function initWidget(){
    // Start/restart visual timing only when SoundCloud confirms real playback.
    if(currentSlide) startTimeline(currentSlide);
  });
+ widget.bind(SC.Widget.Events.PLAY_PROGRESS,e=>{
+   if(e && e.currentPosition>1000)firstPlayRetry=0;
+ });
  widget.bind(SC.Widget.Events.PAUSE,()=>{
    playing=false;
    stopTimeline();
    playBtn.textContent="▶ Play";
    playBtn.classList.remove("playing");
    playBtn.disabled=false;
+   // iOS sometimes pauses its first attempted start while activating audio.
+   // Retry once only if the user still wants playback; a deliberate Pause
+   // clears wantsPlayback and can never enter this branch.
+   if(wantsPlayback && firstPlayRetry>0){
+     firstPlayRetry--;
+     audioStatus.textContent="Starting audio…";
+     widget.play();
+     return;
+   }
    audioStatus.textContent=wantsPlayback?"Ready — press Play.":"Paused";
  });
  widget.bind(SC.Widget.Events.FINISH,()=>{
@@ -185,12 +197,14 @@ playBtn.addEventListener("click",()=>{
  if(!widgetReady){audioStatus.textContent="SoundCloud is still loading…";return}
  if(playing){
    wantsPlayback=false;
+   firstPlayRetry=0;
    widget.pause();
  }else{
    // Important for iPhone/Safari: call play() synchronously inside
    // the user's tap. Do not visually switch to Pause until SoundCloud
    // confirms playback with its PLAY event.
    wantsPlayback=true;
+   firstPlayRetry=audioActivated?0:1;
    audioStatus.textContent=audioActivated?"Starting track…":"Activating audio…";
    playBtn.textContent="▶ Play";
    widget.play();

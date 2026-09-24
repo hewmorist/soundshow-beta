@@ -1,0 +1,213 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Soundshow 0.9.4</title>
+<style>
+*{box-sizing:border-box}html,body{margin:0;min-height:100%;background:#0b0b0b;color:#f5f5f5;font-family:system-ui,-apple-system,Segoe UI,sans-serif}
+body{min-height:100vh;display:grid;place-items:center}.hidden{display:none!important}
+button,.choose{font:inherit;cursor:pointer;border:1px solid #555;background:#181818;color:#fff;border-radius:999px;padding:.8rem 1.2rem}
+button:hover,.choose:hover{background:#292929}.loader,.ready{text-align:center;width:min(92vw,720px);padding:2rem}
+.loader h1,.ready h1{font-size:clamp(2.5rem,7vw,5rem);margin:0 0 .5rem}.loader>p,.ready>p{color:#aaa}
+#fileInput{position:absolute;width:1px;height:1px;opacity:0;pointer-events:none}.choose{display:inline-block;background:#fff;color:#111;border-color:#fff;font-weight:700;margin-top:1rem}
+.drop{margin:2rem auto 0;border:2px dashed #555;border-radius:18px;padding:3rem 1rem;color:#aaa}.drop.over{border-color:#fff;color:#fff;background:#171717}
+.status{min-height:1.5rem;color:#f0a0a0!important}.file-note{font-size:.9rem;color:#777!important}.ready button{margin:.35rem}
+#startBtn{background:#fff;color:#111;border-color:#fff}.secondary{background:transparent;color:#bbb}
+.show{width:min(100vw,1100px);padding:16px}.stage{position:relative;aspect-ratio:1/1;max-height:70vh;margin:auto;overflow:hidden;border-radius:18px;background:#111}
+.stage img{position:absolute;inset:0;width:100%;height:100%;object-fit:contain;display:block;opacity:0}.stage img.active{opacity:1}
+.shade{position:absolute;inset:55% 0 0;background:linear-gradient(transparent,rgba(0,0,0,.8));pointer-events:none}.copy{position:absolute;left:0;right:0;bottom:0;padding:clamp(1rem,4vw,2.5rem)}
+.copy h2{font-size:clamp(1.7rem,5vw,3.5rem);margin:0 0 .25rem;text-shadow:0 2px 12px #000}.copy p{font-size:clamp(1rem,2vw,1.25rem);margin:0;color:#ddd}
+.controls{display:grid;grid-template-columns:1fr auto 1fr;align-items:center;gap:1rem;padding:12px 2px}.controls #prevBtn{justify-self:start}.controls #nextBtn{justify-self:end}
+.center{display:flex;align-items:center;gap:.75rem}.play{min-width:110px;background:#fff;color:#111;border-color:#fff;font-weight:700}#counter{color:#999;white-space:nowrap}
+.audio-status{text-align:center;color:#999;font-size:.9rem;min-height:1.3rem}.lower{text-align:center;padding:4px 0 8px}
+.sc-shell{position:fixed;left:-10000px;top:0;width:300px;height:166px;overflow:hidden}
+#scPlayer{width:300px;height:166px;border:0}
+@media(max-width:600px){.show{padding:8px}.stage{border-radius:10px}.drop{padding:2rem 1rem}.controls{gap:.35rem}.controls button{padding:.65rem .8rem}.center{gap:.4rem}.play{min-width:90px}}
+.version{position:fixed;right:14px;bottom:10px;color:#777;font-size:.78rem;z-index:9999;user-select:none}
+
+#playBtn{-webkit-appearance:none;appearance:none;opacity:1!important;-webkit-tap-highlight-color:transparent}
+#playBtn:active,#playBtn:focus{opacity:1!important;filter:none!important}
+#playBtn.playing{opacity:1!important}
+</style>
+</head>
+<body>
+<div class="version">Soundshow 0.9.4</div><main>
+<section id="loader" class="loader">
+<h1>Soundshow</h1><p>Loading presentation…</p>
+<p id="status" class="status"></p>
+</section>
+<section id="ready" class="ready hidden"><h1 id="showTitle">Soundshow</h1><p id="slideCount"></p>
+<button id="startBtn">Start slideshow</button></section>
+<section id="show" class="show hidden">
+<div class="stage"><img id="slideImage" class="active" alt=""><img id="slideImageB" alt=""><div class="shade"></div><div class="copy"><h2 id="slideTitle"></h2><p id="slideCaption"></p></div></div>
+<div class="controls"><button id="prevBtn">‹ Previous</button><div class="center"><button id="playBtn" class="play">▶ Play</button><span id="counter"></span></div><button id="nextBtn">Next ›</button></div>
+<div id="audioStatus" class="audio-status">Loading SoundCloud…</div>
+<div class="lower"></div>
+<div class="sc-shell"><iframe id="scPlayer" title="SoundCloud player" allow="autoplay" src="about:blank"></iframe></div>
+</section>
+</main>
+<script src="https://w.soundcloud.com/player/api.js"></script>
+<script>
+"use strict";
+let config=null,index=0,widget=null,widgetReady=false,playing=false,wantsPlayback=false,pendingUrl=null,timelineTimer=null,timelineStep=-1,currentSlide=null,audioActivated=false;
+const $=id=>document.getElementById(id), loader=$("loader"),ready=$("ready"),show=$("show"),status=$("status"),player=$("scPlayer"),img=$("slideImage"),imgB=$("slideImageB"),playBtn=$("playBtn"),audioStatus=$("audioStatus");
+const PRESENTATION_FILE="soundshow.json";
+let activeImg=img;
+
+function validate(d){if(!d||typeof d!=="object")throw Error("JSON root must be an object.");if(!Array.isArray(d.slides)||!d.slides.length)throw Error("No slides were found.");d.slides.forEach((s,i)=>{if(!s||typeof s!=="object")throw Error("Slide "+(i+1)+" is invalid.");if((typeof s.image!=="string"||!s.image)&&(!Array.isArray(s.images)||!s.images.length))throw Error("Slide "+(i+1)+" has no image.");});return d}
+async function loadPresentation(){
+ status.textContent="Loading "+PRESENTATION_FILE+"…";
+ try{
+   const response=await fetch(PRESENTATION_FILE,{cache:"no-store"});
+   if(!response.ok)throw Error("HTTP "+response.status);
+   config=validate(await response.json());
+   $("showTitle").textContent=config.title||"Soundshow";
+   $("slideCount").textContent=config.slides.length+" slide"+(config.slides.length===1?"":"s");
+   status.textContent="";
+   loader.classList.add("hidden");show.classList.add("hidden");ready.classList.remove("hidden");
+ }catch(e){
+   status.textContent="Could not load "+PRESENTATION_FILE+": "+e.message;
+ }
+}
+
+function initWidget(){
+ if(widget)return;
+ if(!window.SC||!SC.Widget){audioStatus.textContent="SoundCloud control library did not load.";return}
+ widget=SC.Widget(player);
+ widget.bind(SC.Widget.Events.READY,()=>{
+   widgetReady=true;
+   audioStatus.textContent=audioActivated?"SoundCloud ready — press Play.":"SoundCloud loaded.";
+   if(pendingUrl){loadTrack(pendingUrl);pendingUrl=null}
+});
+ widget.bind(SC.Widget.Events.PLAY,()=>{
+   audioActivated=true;
+   playing=true;
+   wantsPlayback=true;
+   playBtn.textContent="❚❚ Pause";
+   playBtn.classList.add("playing");
+   playBtn.disabled=false;
+   audioStatus.textContent="Playing";
+   // iOS may not allow the first media session to start until this event.
+   // Start/restart visual timing only when SoundCloud confirms real playback.
+   if(currentSlide) startTimeline(currentSlide);
+ });
+ widget.bind(SC.Widget.Events.PAUSE,()=>{
+   playing=false;
+   stopTimeline();
+   playBtn.textContent="▶ Play";
+   playBtn.classList.remove("playing");
+   playBtn.disabled=false;
+   audioStatus.textContent=wantsPlayback?"Ready — press Play.":"Paused";
+ });
+ widget.bind(SC.Widget.Events.FINISH,()=>{
+   playing=false;wantsPlayback=false;
+   playBtn.textContent="▶ Play";playBtn.disabled=false;
+   audioStatus.textContent="Track finished";
+ });
+ widget.bind(SC.Widget.Events.ERROR,()=>{
+   playing=false;wantsPlayback=false;
+   playBtn.textContent="▶ Play";playBtn.disabled=false;
+   audioStatus.textContent="SoundCloud could not load this track.";
+ });
+}
+function loadTrack(url){
+ playing=false;playBtn.textContent="▶ Play";playBtn.classList.remove("playing");playBtn.disabled=false;
+ if(!url){audioStatus.textContent="No audio on this slide."; if(widgetReady)widget.pause();return}
+ audioStatus.textContent="Loading SoundCloud track…";
+ if(!widgetReady){pendingUrl=url;player.src="https://w.soundcloud.com/player/?url="+encodeURIComponent(url)+"&auto_play=false";initWidget();return}
+ widget.load(url,{auto_play:false,hide_related:true,show_comments:false,show_reposts:false,show_user:true,visual:false,callback:()=>{if(wantsPlayback){audioStatus.textContent="Starting track…";setTimeout(()=>widget.play(),150)}else{audioStatus.textContent="SoundCloud ready — press Play."}}});
+}
+
+function stopTimeline(){if(timelineTimer){clearInterval(timelineTimer);timelineTimer=null}timelineStep=-1}
+function timelineImage(slide,step){
+  if(!slide.timeline||!slide.timeline.length)return;
+  const ev=slide.timeline[step]; if(!ev)return;
+  let source=null;
+  if(typeof ev.image==="number"&&Array.isArray(slide.images))source=slide.images[ev.image];
+  else if(typeof ev.image==="string")source=ev.image;
+  if(!source)return;
+  const transition=(ev.transition||"fade").toLowerCase();
+  const seconds=Math.max(0,Number(ev.duration ?? 0.7));
+  const incoming=(activeImg===img)?imgB:img;
+  const outgoing=activeImg;
+  const pre=new Image();
+  pre.onload=()=>{
+    incoming.src=source; incoming.alt=slide.title||"";
+    if(transition==="cut"||seconds===0){
+      outgoing.style.transition="none"; incoming.style.transition="none";
+      outgoing.classList.remove("active"); incoming.classList.add("active");
+    }else{
+      outgoing.style.transition=`opacity ${seconds}s ease`;
+      incoming.style.transition=`opacity ${seconds}s ease`;
+      incoming.classList.add("active"); outgoing.classList.remove("active");
+    }
+    activeImg=incoming;
+  };
+  pre.src=source;
+}
+function startTimeline(slide){
+  stopTimeline();
+  if(!slide.timeline||!slide.timeline.length||!widgetReady)return;
+  timelineTimer=setInterval(()=>{
+    widget.getPosition(ms=>{
+      const sec=ms/1000; let step=-1;
+      for(let i=0;i<slide.timeline.length;i++){
+        if(sec>=Number(slide.timeline[i].time||0))step=i; else break;
+      }
+      if(step!==timelineStep&&step>=0){timelineStep=step;timelineImage(slide,step)}
+    });
+  },250);
+}
+
+function render(n){
+ index=(n+config.slides.length)%config.slides.length;const s=config.slides[index];currentSlide=s;stopTimeline();
+ const firstImage=(Array.isArray(s.images)&&s.images.length)?s.images[0]:s.image;
+ img.style.transition="none";imgB.style.transition="none";img.classList.add("active");imgB.classList.remove("active");activeImg=img;
+ const pre=new Image();pre.onload=()=>{img.src=firstImage;img.alt=s.title||""};pre.src=firstImage;
+ $("slideTitle").textContent=s.title||"";$("slideCaption").textContent=s.caption||"";$("counter").textContent=(index+1)+" / "+config.slides.length;
+ loadTrack(s.soundcloud||null);
+}
+function reset(){location.reload()}
+loadPresentation();
+$("startBtn").addEventListener("click",()=>{
+ ready.classList.add("hidden");
+ show.classList.remove("hidden");
+ render(0);
+
+ // Mobile Safari often requires one user gesture to activate media inside
+ // the SoundCloud iframe before a later Play command can succeed.
+ // If the widget is already ready, briefly start/pause it from this gesture.
+ // If it is not ready yet, we simply leave normal Play handling in place.
+ if(widgetReady && widget){
+   audioStatus.textContent="Preparing audio…";
+   widget.play();
+   setTimeout(()=>{
+     if(playing){
+       wantsPlayback=false;
+       widget.pause();
+       widget.seekTo(0);
+       audioStatus.textContent="Ready — press Play.";
+     }
+   },250);
+ }
+});
+playBtn.addEventListener("click",()=>{
+ if(!widgetReady){audioStatus.textContent="SoundCloud is still loading…";return}
+ if(playing){
+   wantsPlayback=false;
+   widget.pause();
+ }else{
+   // Important for iPhone/Safari: call play() synchronously inside
+   // the user's tap. Do not visually switch to Pause until SoundCloud
+   // confirms playback with its PLAY event.
+   wantsPlayback=true;
+   audioStatus.textContent=audioActivated?"Starting track…":"Activating audio…";
+   playBtn.textContent="▶ Play";
+   if(currentSlide) startTimeline(currentSlide);
+   widget.play();
+ }
+});
+$("prevBtn").addEventListener("click",()=>render(index-1));$("nextBtn").addEventListener("click",()=>render(index+1));
+document.addEventListener("keydown",e=>{if(show.classList.contains("hidden"))return;if(e.key==="ArrowLeft")render(index-1);if(e.key==="ArrowRight")render(index+1);if(e.code==="Space"){e.preventDefault();playBtn.click()}});
+</script>
+</body></html>

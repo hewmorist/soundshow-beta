@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Soundshow 0.9.4</title>
+<title>Soundshow 0.9.5</title>
 <style>
 *{box-sizing:border-box}html,body{margin:0;min-height:100%;background:#0b0b0b;color:#f5f5f5;font-family:system-ui,-apple-system,Segoe UI,sans-serif}
 body{min-height:100vh;display:grid;place-items:center}.hidden{display:none!important}
@@ -25,13 +25,17 @@ button:hover,.choose:hover{background:#292929}.loader,.ready{text-align:center;w
 @media(max-width:600px){.show{padding:8px}.stage{border-radius:10px}.drop{padding:2rem 1rem}.controls{gap:.35rem}.controls button{padding:.65rem .8rem}.center{gap:.4rem}.play{min-width:90px}}
 .version{position:fixed;right:14px;bottom:10px;color:#777;font-size:.78rem;z-index:9999;user-select:none}
 
-#playBtn{-webkit-appearance:none;appearance:none;opacity:1!important;-webkit-tap-highlight-color:transparent}
-#playBtn:active,#playBtn:focus{opacity:1!important;filter:none!important}
-#playBtn.playing{opacity:1!important}
+#playBtn,#playBtn:hover,#playBtn:focus,#playBtn:active,#playBtn.playing{
+  -webkit-appearance:none;appearance:none;
+  background-color:#fff!important;color:#111!important;-webkit-text-fill-color:#111!important;
+  border-color:#fff!important;opacity:1!important;filter:none!important;
+  -webkit-tap-highlight-color:transparent
+}
+#playBtn:disabled{background-color:#fff!important;color:#111!important;-webkit-text-fill-color:#111!important;opacity:1!important}
 </style>
 </head>
 <body>
-<div class="version">Soundshow 0.9.4</div><main>
+<div class="version">Soundshow 0.9.5</div><main>
 <section id="loader" class="loader">
 <h1>Soundshow</h1><p>Loading presentation…</p>
 <p id="status" class="status"></p>

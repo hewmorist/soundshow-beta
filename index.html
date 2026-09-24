@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Soundshow 0.9.7</title>
+<title>Soundshow 0.9.8</title>
 <style>
 *{box-sizing:border-box}html,body{margin:0;min-height:100%;background:#0b0b0b;color:#f5f5f5;font-family:system-ui,-apple-system,Segoe UI,sans-serif}
 body{min-height:100vh;display:grid;place-items:center}.hidden{display:none!important}
@@ -35,7 +35,7 @@ button:hover,.choose:hover{background:#292929}.loader,.ready{text-align:center;w
 </style>
 </head>
 <body>
-<div class="version">Soundshow 0.9.7</div><main>
+<div class="version">Soundshow 0.9.8</div><main>
 <section id="loader" class="loader">
 <h1>Soundshow</h1><p>Loading presentation…</p>
 <p id="status" class="status"></p>
@@ -97,7 +97,7 @@ function initWidget(){
    if(currentSlide) startTimeline(currentSlide);
  });
  widget.bind(SC.Widget.Events.PLAY_PROGRESS,e=>{
-   if(e && e.currentPosition>1000)firstPlayRetry=0;
+   if(e && e.currentPosition>5000)firstPlayRetry=0;
  });
  widget.bind(SC.Widget.Events.PAUSE,()=>{
    playing=false;
@@ -111,7 +111,7 @@ function initWidget(){
    if(wantsPlayback && firstPlayRetry>0){
      firstPlayRetry--;
      audioStatus.textContent="Starting audio…";
-     widget.play();
+     setTimeout(()=>{if(wantsPlayback && !playing)widget.play()},100);
      return;
    }
    audioStatus.textContent=wantsPlayback?"Ready — press Play.":"Paused";

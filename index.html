@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Soundshow 0.9.5</title>
+<title>Soundshow 0.9.6</title>
 <style>
 *{box-sizing:border-box}html,body{margin:0;min-height:100%;background:#0b0b0b;color:#f5f5f5;font-family:system-ui,-apple-system,Segoe UI,sans-serif}
 body{min-height:100vh;display:grid;place-items:center}.hidden{display:none!important}
@@ -35,7 +35,7 @@ button:hover,.choose:hover{background:#292929}.loader,.ready{text-align:center;w
 </style>
 </head>
 <body>
-<div class="version">Soundshow 0.9.5</div><main>
+<div class="version">Soundshow 0.9.6</div><main>
 <section id="loader" class="loader">
 <h1>Soundshow</h1><p>Loading presentation…</p>
 <p id="status" class="status"></p>
@@ -81,7 +81,8 @@ function initWidget(){
  widget.bind(SC.Widget.Events.READY,()=>{
    widgetReady=true;
    audioStatus.textContent=audioActivated?"SoundCloud ready — press Play.":"SoundCloud loaded.";
-   if(pendingUrl){loadTrack(pendingUrl);pendingUrl=null}
+   // The iframe already loaded this URL before READY; do not reload it.
+   if(pendingUrl){pendingUrl=null;audioStatus.textContent="Ready — press Play."}
 });
  widget.bind(SC.Widget.Events.PLAY,()=>{
    audioActivated=true;
@@ -178,22 +179,7 @@ $("startBtn").addEventListener("click",()=>{
  show.classList.remove("hidden");
  render(0);
 
- // Mobile Safari often requires one user gesture to activate media inside
- // the SoundCloud iframe before a later Play command can succeed.
- // If the widget is already ready, briefly start/pause it from this gesture.
- // If it is not ready yet, we simply leave normal Play handling in place.
- if(widgetReady && widget){
-   audioStatus.textContent="Preparing audio…";
-   widget.play();
-   setTimeout(()=>{
-     if(playing){
-       wantsPlayback=false;
-       widget.pause();
-       widget.seekTo(0);
-       audioStatus.textContent="Ready — press Play.";
-     }
-   },250);
- }
+
 });
 playBtn.addEventListener("click",()=>{
  if(!widgetReady){audioStatus.textContent="SoundCloud is still loading…";return}
@@ -207,7 +193,6 @@ playBtn.addEventListener("click",()=>{
    wantsPlayback=true;
    audioStatus.textContent=audioActivated?"Starting track…":"Activating audio…";
    playBtn.textContent="▶ Play";
-   if(currentSlide) startTimeline(currentSlide);
    widget.play();
  }
 });

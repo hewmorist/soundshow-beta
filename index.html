@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Soundshow 0.9.9</title>
+<title>Soundshow 0.9.11</title>
 <style>
 *{box-sizing:border-box}html,body{margin:0;min-height:100%;background:#0b0b0b;color:#f5f5f5;font-family:system-ui,-apple-system,Segoe UI,sans-serif}
 body{min-height:100vh;display:grid;place-items:center}.hidden{display:none!important}
@@ -19,12 +19,10 @@ button:hover,.choose:hover{background:#292929}.loader,.ready{text-align:center;w
 .copy h2{font-size:clamp(1.7rem,5vw,3.5rem);margin:0 0 .25rem;text-shadow:0 2px 12px #000}.copy p{font-size:clamp(1rem,2vw,1.25rem);margin:0;color:#ddd}
 .controls{display:grid;grid-template-columns:1fr auto 1fr;align-items:center;gap:1rem;padding:12px 2px}.controls #prevBtn{justify-self:start}.controls #nextBtn{justify-self:end}
 .center{display:flex;align-items:center;gap:.75rem}.play{min-width:110px;background:#fff;color:#111;border-color:#fff;font-weight:700}#counter{color:#999;white-space:nowrap}
-.audio-status{text-align:center;color:#999;font-size:.9rem;min-height:1.3rem}.lower{text-align:center;padding:4px 0 8px}
+.audio-status{text-align:center;color:#999;font-size:.9rem;min-height:1.3rem}
+.debug{color:#aaa;font-size:.8rem;margin:.5rem auto;max-width:620px}.debug summary{cursor:pointer;text-align:center}.debug pre{white-space:pre-wrap;line-height:1.35;max-height:200px;overflow:auto;background:#151515;padding:8px;border-radius:8px}.lower{text-align:center;padding:4px 0 8px}
 .sc-shell{position:fixed;left:-10000px;top:0;width:300px;height:166px;overflow:hidden}
 #scPlayer{width:300px;height:166px;border:0}
-body.ios #playBtn{display:none}
-body.ios .sc-shell{position:static;width:100%;height:120px;overflow:visible;margin:12px auto 0}
-body.ios #scPlayer{display:block;width:100%;height:120px;border:0}
 @media(max-width:600px){.show{padding:8px}.stage{border-radius:10px}.drop{padding:2rem 1rem}.controls{gap:.35rem}.controls button{padding:.65rem .8rem}.center{gap:.4rem}.play{min-width:90px}}
 .version{position:fixed;right:14px;bottom:10px;color:#777;font-size:.78rem;z-index:9999;user-select:none}
 
@@ -38,7 +36,7 @@ body.ios #scPlayer{display:block;width:100%;height:120px;border:0}
 </style>
 </head>
 <body>
-<div class="version">Soundshow 0.9.9</div><main>
+<div class="version">Soundshow 0.9.11</div><main>
 <section id="loader" class="loader">
 <h1>Soundshow</h1><p>Loading presentation…</p>
 <p id="status" class="status"></p>
@@ -49,6 +47,7 @@ body.ios #scPlayer{display:block;width:100%;height:120px;border:0}
 <div class="stage"><img id="slideImage" class="active" alt=""><img id="slideImageB" alt=""><div class="shade"></div><div class="copy"><h2 id="slideTitle"></h2><p id="slideCaption"></p></div></div>
 <div class="controls"><button id="prevBtn">‹ Previous</button><div class="center"><button id="playBtn" class="play">▶ Play</button><span id="counter"></span></div><button id="nextBtn">Next ›</button></div>
 <div id="audioStatus" class="audio-status">Loading SoundCloud…</div>
+<details class="debug" id="debugDetails"><summary>Playback details</summary><pre id="debugLog"></pre></details>
 <div class="lower"></div>
 <div class="sc-shell"><iframe id="scPlayer" title="SoundCloud player" allow="autoplay" src="about:blank"></iframe></div>
 </section>
@@ -59,9 +58,8 @@ body.ios #scPlayer{display:block;width:100%;height:120px;border:0}
 let config=null,index=0,widget=null,widgetReady=false,playing=false,wantsPlayback=false,pendingUrl=null,timelineTimer=null,timelineStep=-1,currentSlide=null,audioActivated=false;
 const $=id=>document.getElementById(id), loader=$("loader"),ready=$("ready"),show=$("show"),status=$("status"),player=$("scPlayer"),img=$("slideImage"),imgB=$("slideImageB"),playBtn=$("playBtn"),audioStatus=$("audioStatus");
 const PRESENTATION_FILE="soundshow.json";
-const nativePlayer=/iPhone|iPad|iPod/.test(navigator.userAgent)||(navigator.platform==="MacIntel"&&navigator.maxTouchPoints>1);
-if(nativePlayer)document.body.classList.add("ios");
-let activeImg=img;
+let activeImg=img,debugStart=Date.now(),lastProgressSecond=-1;
+function logEvent(message){const line=((Date.now()-debugStart)/1000).toFixed(2)+"s  "+message;const el=$("debugLog");el.textContent+=(el.textContent?"\n":"")+line;el.scrollTop=el.scrollHeight}
 
 function validate(d){if(!d||typeof d!=="object")throw Error("JSON root must be an object.");if(!Array.isArray(d.slides)||!d.slides.length)throw Error("No slides were found.");d.slides.forEach((s,i)=>{if(!s||typeof s!=="object")throw Error("Slide "+(i+1)+" is invalid.");if((typeof s.image!=="string"||!s.image)&&(!Array.isArray(s.images)||!s.images.length))throw Error("Slide "+(i+1)+" has no image.");});return d}
 async function loadPresentation(){
@@ -74,6 +72,7 @@ async function loadPresentation(){
    $("slideCount").textContent=config.slides.length+" slide"+(config.slides.length===1?"":"s");
    status.textContent="";
    loader.classList.add("hidden");show.classList.add("hidden");ready.classList.remove("hidden");
+   if(config.slides[0].soundcloud){$("startBtn").disabled=true;$("startBtn").textContent="Preparing audio…";loadTrack(config.slides[0].soundcloud)}
  }catch(e){
    status.textContent="Could not load "+PRESENTATION_FILE+": "+e.message;
  }
@@ -84,15 +83,17 @@ function initWidget(){
  if(!window.SC||!SC.Widget){audioStatus.textContent="SoundCloud control library did not load.";return}
  widget=SC.Widget(player);
  widget.bind(SC.Widget.Events.READY,()=>{
-   widgetReady=true;
+   widgetReady=true;logEvent("Widget READY");
+   $("startBtn").disabled=false;$("startBtn").textContent="Start slideshow";
    audioStatus.textContent=audioActivated?"SoundCloud ready — press Play.":"SoundCloud loaded.";
    // The iframe already loaded this URL before READY; do not reload it.
-   if(pendingUrl){pendingUrl=null;audioStatus.textContent=nativePlayer?"Press Play in the SoundCloud player below.":"Ready — press Play."}
+   if(pendingUrl){pendingUrl=null;logEvent("Initial track ready");audioStatus.textContent="Ready — press Play."}
 });
  widget.bind(SC.Widget.Events.PLAY,()=>{
    audioActivated=true;
    playing=true;
    wantsPlayback=true;
+   logEvent("Widget PLAY");
    playBtn.textContent="❚❚ Pause";
    playBtn.classList.add("playing");
    playBtn.disabled=false;
@@ -102,25 +103,31 @@ function initWidget(){
    if(currentSlide) startTimeline(currentSlide);
  });
  widget.bind(SC.Widget.Events.PAUSE,()=>{
+   logEvent("Widget PAUSE; requested="+wantsPlayback);
+   widget.getPosition(ms=>logEvent("Position at pause: "+(ms/1000).toFixed(2)+"s"));
    playing=false;
    stopTimeline();
    playBtn.textContent="▶ Play";
    playBtn.classList.remove("playing");
    playBtn.disabled=false;
-   audioStatus.textContent=nativePlayer?"Paused — use the SoundCloud player below.":"Paused";
+   audioStatus.textContent=wantsPlayback?"Ready — press Play.":"Paused";
  });
+ widget.bind(SC.Widget.Events.PLAY_PROGRESS,e=>{const n=Math.floor((e?.currentPosition||0)/1000);if(n!==lastProgressSecond&&n<8){lastProgressSecond=n;logEvent("Progress "+((e?.currentPosition||0)/1000).toFixed(2)+"s")}});
  widget.bind(SC.Widget.Events.FINISH,()=>{
+   logEvent("Widget FINISH");
    playing=false;wantsPlayback=false;
    playBtn.textContent="▶ Play";playBtn.disabled=false;
    audioStatus.textContent="Track finished";
  });
  widget.bind(SC.Widget.Events.ERROR,()=>{
+   logEvent("Widget ERROR");
    playing=false;wantsPlayback=false;
    playBtn.textContent="▶ Play";playBtn.disabled=false;
    audioStatus.textContent="SoundCloud could not load this track.";
  });
 }
 function loadTrack(url){
+ logEvent("Load track; widgetReady="+widgetReady);
  playing=false;playBtn.textContent="▶ Play";playBtn.classList.remove("playing");playBtn.disabled=false;
  if(!url){audioStatus.textContent="No audio on this slide."; if(widgetReady)widget.pause();return}
  audioStatus.textContent="Loading SoundCloud track…";
@@ -169,28 +176,35 @@ function startTimeline(slide){
   },250);
 }
 
-function render(n){
+function render(n,keepTrack=false){
  index=(n+config.slides.length)%config.slides.length;const s=config.slides[index];currentSlide=s;stopTimeline();
  const firstImage=(Array.isArray(s.images)&&s.images.length)?s.images[0]:s.image;
  img.style.transition="none";imgB.style.transition="none";img.classList.add("active");imgB.classList.remove("active");activeImg=img;
  const pre=new Image();pre.onload=()=>{img.src=firstImage;img.alt=s.title||""};pre.src=firstImage;
  $("slideTitle").textContent=s.title||"";$("slideCaption").textContent=s.caption||"";$("counter").textContent=(index+1)+" / "+config.slides.length;
- loadTrack(s.soundcloud||null);
+ if(!keepTrack)loadTrack(s.soundcloud||null);
 }
 function reset(){location.reload()}
 loadPresentation();
 $("startBtn").addEventListener("click",()=>{
+ debugStart=Date.now();$("debugLog").textContent="";logEvent("Start slideshow tapped");
  ready.classList.add("hidden");
  show.classList.remove("hidden");
- render(0);
+ render(0,true);
+ if(widgetReady && config.slides[0].soundcloud){
+   wantsPlayback=true;
+   logEvent("Play requested by Start gesture");
+   audioStatus.textContent="Starting track…";
+   widget.play();
+ }
 
 
 });
 playBtn.addEventListener("click",()=>{
+ logEvent("Play button tapped; widgetReady="+widgetReady+" playing="+playing);
  if(!widgetReady){audioStatus.textContent="SoundCloud is still loading…";return}
  if(playing){
    wantsPlayback=false;
-   
    widget.pause();
  }else{
    // Important for iPhone/Safari: call play() synchronously inside
